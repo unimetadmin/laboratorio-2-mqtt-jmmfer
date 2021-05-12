@@ -1,0 +1,144 @@
+import paho.mqtt.client as mqttclient
+import time
+import psycopg2
+import json
+
+connected = False
+message_recived = False
+client = None
+conn = None
+cur = None
+
+def conectar_DB():
+#    up.uses_netloc.append("postgres")
+#url = up.urlparse(os.environ["DATABASE_URL"])
+#conn = psycopg2.connect(database=url.path[1:],
+#                        user=url.username,
+#                        password=url.password,
+#                        host=url.hostname,
+#                        port=url.port
+#                        )
+    global conn, cur
+    host = "queenie.db.elephantsql.com"
+    puerto = 5432
+    user = "mlrmsnhx"
+    password = "aulT8AY6h3ioVo2ztM7Thf1Wm5m9Kwp5"
+    database = "mlrmsnhx"
+    conn =  psycopg2.connect(database=database,
+                            user=user,
+                            password=password,
+                            host=host,
+                            port=puerto
+                            )
+    cur = conn.cursor()
+def conectar_mqtt():
+    global client
+    broker_address = "c0b2d8757bde488aab72fca3dba31471.s1.eu.hivemq.cloud"
+    port = 8883
+    user = "usuario"
+    password = "Adminl02"
+    client = mqttclient.Client("Suscriptor")
+    client.tls_set(tls_version=mqttclient.ssl.PROTOCOL_TLS)
+    client.username_pw_set(user, password=password)
+    client.on_message = on_message
+    client.on_connect = on_connect
+
+    client.connect(broker_address,port=port)
+    client.subscribe("cocina/nevera")
+    client.subscribe("cocina/hielo")
+    client.subscribe("cocina/olla")
+    client.subscribe("sala/contador")
+    client.subscribe("sala/alexa")
+    client.subscribe("bano/tanque")
+    client.subscribe("alerta")
+
+def on_message(client, userdata, message):
+    topico = message.topic
+    print("topico: "+ topico)
+    if topico == "cocina/nevera":
+        temperatura_nevera(message)
+
+    elif topico == "cocina/olla":
+        temperatura_olla(message)
+
+    elif topico == "sala/contador":
+        contador_personas(message)
+
+    elif topico == "sala/alexa":
+        alexa_echo(message)
+
+    elif topico == "bano/tanque":
+        tanque(message)
+
+    elif topico == "alerta":
+        alerta(message)
+
+def temperatura_nevera(message):
+    global cur, conn
+    lista = json.loads(message.payload.decode("utf-8"))
+    sql = "Insert into nevera(temperatura,hielo) values (%s,%s)"
+    record = (lista[0],lista[1])
+    cur.execute(sql,record)
+    conn.commit()
+    print("cocina/nevera "+ message.payload.decode("utf-8"))
+
+def temperatura_olla(message):
+    global cur, conn
+    data = message.payload.decode("utf-8")
+    sql = "Insert into olla(temperatura) values (%s)"
+    cur.execute(sql,(data,))
+    conn.commit()
+    print("cocina/olla "+message.payload.decode("utf-8"))
+
+def contador_personas(message):
+    global cur, conn
+    data = message.payload.decode("utf-8")
+    sql = "Insert into contador(contador) values (%s)"
+    cur.execute(sql,(data,))
+    conn.commit()
+    print("sala/contador "+ message.payload.decode("utf-8"))
+
+def alexa_echo(message):
+    global cur, conn
+    data = message.payload.decode("utf-8")
+    sql = "Insert into alexa(temperatura) values (%s)"
+    cur.execute(sql,(data,))
+    conn.commit()
+    print("sala/alexa " +message.payload.decode("utf-8"))
+
+def tanque(message):
+    global cur, conn
+    data = message.payload.decode("utf-8")
+    sql = "Insert into tanque(nivel) values (%s)"
+    cur.execute(sql,(data,))
+    conn.commit()
+    print("bano/tanque "+message.payload.decode("utf-8"))
+def alerta(message):
+    lista = json.loads(message.payload.decode("utf-8"))
+    topico = lista[0]
+    data = lista[1]
+    record = (topico,data)
+    sql = "Insert into alerta(topico,mensaje) values (%s,%s)"
+    cur.execute(sql,record)
+    conn.commit()
+
+def on_connect(client, usedata, flags, rc):
+    if rc==0:
+        print("cliente conectado")
+        global connected
+        connected = True
+    else:
+        print("conexión fallo")
+
+def main():
+    conectar_DB()
+    conectar_mqtt()
+    client.loop_start()
+    while not connected:
+        time.sleep(0.1)
+
+    while not message_recived:
+        time.sleep(0.1)
+    client.loop_stop()
+
+main()
